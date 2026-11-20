@@ -37,10 +37,11 @@ input bool             InpStartPaused      = false;         // Start in PAUSE mo
 
 input group "=== Which signals open orders ==="
 input bool             InpTradeM15         = true;          // Trade BUY/SELL (M15)
-input bool             InpTradeH1          = true;          // Trade ACTION BUY/SELL (H1)
-input bool             InpTradeH4          = true;          // Trade ACTION BUY/SELL (H4)
-input bool             InpTradeMega        = true;          // Trade MEGA BUY/SELL (Big Volume, scalp)
-input bool             InpRequireFib       = true;          // Require valid H4 Fib Expansion TP (like Pine)
+input bool             InpTradeH1          = false;         // Trade ACTION BUY/SELL (H1)
+input bool             InpTradeH4          = false;         // Trade ACTION BUY/SELL (H4)
+input bool             InpTradeFollow      = true;          // Trade F-BUY / F-SELL (follow trend, M15)
+input bool             InpTradeMega        = true;          // Trade MEGA BUY/SELL (Big Volume, safe-exit mode)
+input bool             InpRequireFib       = false;         // Require valid H4 Fib TP (false = fallback RR TP like latest Pine)
 
 input group "=== EMA / RSI ==="
 input double           InpEmaSpreadMaxPct  = 3.0;           // Compression % (EMA14-EMA100 / close)
@@ -49,6 +50,10 @@ input double           InpBuyLow           = 23.0;          // RSI BUY zone low
 input double           InpBuyHigh          = 30.0;          // RSI BUY zone high
 input double           InpSellLow          = 70.0;          // RSI SELL zone low
 input double           InpSellHigh         = 85.0;          // RSI SELL zone high
+input double           InpFollowBuyLow     = 30.0;          // Follow BUY RSI low
+input double           InpFollowBuyHigh    = 50.0;          // Follow BUY RSI high
+input double           InpFollowSellLow    = 60.0;          // Follow SELL RSI low
+input double           InpFollowSellHigh   = 75.0;          // Follow SELL RSI high
 
 input group "=== GVZ (CBOE gold volatility) ==="
 input string           InpGvzSymbol        = "";            // GVZ symbol in your broker (empty = disabled)
@@ -80,26 +85,40 @@ input bool             InpShowFibZone      = true;          // Draw H4 retest zo
 input double           InpTp1QtyPct        = 33;            // TP1 qty %
 input double           InpTp2QtyPct        = 33;            // TP2 qty %
 input double           InpTp3QtyPct        = 34;            // TP3 qty %
-input double           InpFallbackRR       = 1.0;           // If Fib not required/invalid: TP = RR x SL (TP1=1x,TP2=2x,TP3=3x)
+input double           InpFallbackRR       = 2.0;           // Fib invalid: TP1 = RR x SL (TP2=2x, TP3=3x of that)
 
 input group "=== MEGA (Big Volume) ==="
 input int              InpVolMALen         = 20;            // Volume MA length
 input double           InpVolSpikeMult     = 2.5;           // Volume spike x
 input double           InpVolBodyMinPct    = 55.0;          // Min body % of range
 input bool             InpVolReqTrend      = true;          // Require EMA trend alignment (M15)
-input double           InpMegaSlAtrMult    = 1.0;           // MEGA SL = ATR x
-input double           InpMegaRR           = 1.5;           // MEGA TP = RR x SL (single position)
+input double           InpMegaSlBufAtr     = 0.25;          // SL buffer beyond MEGA candle extreme (ATR x)
+input double           InpMegaMinSlAtr     = 0.6;           // Min SL distance (ATR x)
+input double           InpMegaMaxSlAtr     = 2.0;           // Max SL distance (ATR x) - wider => SKIP trade
+input double           InpMegaMaxChaseAtr  = 0.5;           // Skip if price already ran > ATR x from candle close
+input double           InpMegaTp1R         = 1.0;           // TP1 = R x SL
+input double           InpMegaTp2R         = 2.0;           // TP2 = R x SL
+input double           InpMegaTp3R         = 4.0;           // TP3 (runner) = R x SL
+input double           InpMegaQty1         = 40;            // TP1 qty %
+input double           InpMegaQty2         = 30;            // TP2 qty %
+input double           InpMegaQty3         = 30;            // TP3 qty % (runner, trailed)
+input double           InpMegaTrailAtr     = 1.0;           // Trail distance after TP1 (ATR x)
+input int              InpMegaTimeStopMin  = 45;            // Close all if TP1 not reached within N minutes (0=off)
+input double           InpMegaRiskPct      = 1.0;           // Risk % per MEGA setup (LOT_RISK mode)
 
 input group "=== Lot size ==="
 input ENUM_LOTMODE     InpLotMode          = LOT_FIXED;     // Lot mode
 input double           InpFixedLot         = 0.03;          // Fixed TOTAL lot per setup (split into 3 legs)
 input double           InpRiskPct          = 2.0;           // Risk % of equity per setup (LOT_RISK)
 
-input group "=== Break-even / Trailing (0 = off, Pine default) ==="
-input double           InpBeTriggerAtr     = 0.0;           // Move SL to BE after profit >= ATR x
-input int              InpBeOffsetPts      = 20;            // BE offset (points)
-input double           InpTrailStartAtr    = 0.0;           // Start trailing after profit >= ATR x
-input double           InpTrailAtr         = 0.0;           // Trail distance = ATR x
+input group "=== Risk control / BE / Trailing (latest Pine) ==="
+input bool             InpBEOnTP1          = true;          // Move SL to BE after TP1
+input int              InpBeOffsetPts      = 20;            // BE offset (points, covers spread)
+input bool             InpUseTrailing      = true;          // Use trailing SL
+input bool             InpTrailOnTP1       = true;          // Start trailing after TP1
+input double           InpTrailAtrMult     = 1.5;           // Trail = ATR x
+input double           InpMaxRiskCapPct    = 10.0;          // Skip trade if SL loss > this % of equity (0=off)
+input double           InpMaxDailyLossPct  = 5.0;           // Stop opening new trades if today's loss >= this % of balance (0=off)
 
 input group "=== Dashboard ==="
 input bool             InpShowDash         = true;          // Show dashboard
@@ -117,6 +136,7 @@ input string           InpFont             = "Consolas";    // Font
 #define SRC_H1   1
 #define SRC_H4   2
 #define SRC_MEGA 3
+#define SRC_FOLLOW 4
 #define R_OPENED 0
 #define R_FINAL  1   // rejected - do not retry this signal
 #define R_RETRY  2   // blocked temporarily (spread, pause...) - retry next second
@@ -177,10 +197,14 @@ bool     g_gvzOn = false, g_gsrOn = false;
 bool     g_paused = false;
 bool     g_minimized = false;
 ulong    g_lastProcMs = 0;
-datetime g_lastTrig[4][2];       // [src][0=buy,1=sell] bar time already handled
+datetime g_lastTrig[5][2];       // [src][0=buy,1=sell] bar time already handled
 datetime g_lastOpenTime = 0;
 string   g_lastAction = "-";
 string   g_lastResult = "-";
+int      g_setupSrc = -1, g_setupLegs = 0;
+bool     g_tp1Done = false;
+double   g_tp1Price = 0;
+bool     g_folBuy = false, g_folSell = false;
 
 // live snapshot for dashboard
 TrendState g_ts[3];
@@ -598,6 +622,18 @@ void Evaluate(bool &trig[][2])
    trig[3][0] = b0 && !b1;
    trig[3][1] = s0 && !s1;
 
+   // Follow BUY / SELL (M15)
+   TrendState tp15;
+   bool pv = Trend(g_h[0], s + 1, tp15);
+   bool fb0 = g_ts[0].valid && g_ts[0].bullOK && g_ts[0].rsi >= InpFollowBuyLow  && g_ts[0].rsi <= InpFollowBuyHigh;
+   bool fs0 = g_ts[0].valid && g_ts[0].bearOK && g_ts[0].rsi >= InpFollowSellLow && g_ts[0].rsi <= InpFollowSellHigh;
+   bool fb1 = pv && tp15.bullOK && tp15.rsi >= InpFollowBuyLow  && tp15.rsi <= InpFollowBuyHigh;
+   bool fs1 = pv && tp15.bearOK && tp15.rsi >= InpFollowSellLow && tp15.rsi <= InpFollowSellHigh;
+   g_folBuy = fb0;
+   g_folSell = fs0;
+   trig[4][0] = fb0 && !fb1;
+   trig[4][1] = fs0 && !fs1;
+
    // ATR
    double a = Buf(g_atrH, 1);
    if(a != EMPTY_VALUE && a > 0)
@@ -641,12 +677,29 @@ void Evaluate(bool &trig[][2])
    else
       if(g_now[0].sell && fS)
          g_sigText = "SELL";
+      else
+         if(g_folBuy)
+            g_sigText = "F-BUY";
+         else
+            if(g_folSell)
+               g_sigText = "F-SELL";
   }
 
 //==================================================================
 //  ORDER EXECUTION
 //==================================================================
-double CalcTotalLot(const double slDist)
+double LossPerLot(const double slDist)
+  {
+   double tv = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE_LOSS);
+   if(tv <= 0)
+      tv = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+   double ts = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   if(tv <= 0 || ts <= 0)
+      return 0;
+   return slDist / ts * tv;
+  }
+
+double CalcTotalLot(const double slDist, const double riskPct)
   {
    double minL = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
    double maxL = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
@@ -654,18 +707,8 @@ double CalcTotalLot(const double slDist)
    double lot  = InpFixedLot;
    if(InpLotMode == LOT_RISK)
      {
-      double tv = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE_LOSS);
-      if(tv <= 0)
-         tv = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
-      double ts = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
-      if(tv > 0 && ts > 0 && slDist > 0)
-        {
-         double lossPerLot = slDist / ts * tv;
-         double risk = AccountInfoDouble(ACCOUNT_EQUITY) * InpRiskPct / 100.0;
-         lot = risk / lossPerLot;
-        }
-      else
-         lot = minL;
+      double lpl = LossPerLot(slDist);
+      lot = (lpl > 0) ? AccountInfoDouble(ACCOUNT_EQUITY) * riskPct / 100.0 / lpl : minL;
      }
    if(st > 0)
       lot = MathFloor(lot / st + 1e-9) * st;
@@ -674,16 +717,16 @@ double CalcTotalLot(const double slDist)
   }
 
 //--- split total lot into 3 legs, merge legs smaller than min lot into the next one
-void SplitLots(const double total, double &v[])
+void SplitLots(const double total, double &v[], const double p1, const double p2, const double p3)
   {
    double minL = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
    double st   = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
    int vd = VolDigits();
-   double pc = InpTp1QtyPct + InpTp2QtyPct + InpTp3QtyPct;
+   double pc = p1 + p2 + p3;
    if(pc <= 0)
       pc = 100;
-   v[0] = MathFloor(total * (InpTp1QtyPct / pc) / st + 1e-9) * st;
-   v[1] = MathFloor(total * (InpTp2QtyPct / pc) / st + 1e-9) * st;
+   v[0] = MathFloor(total * (p1 / pc) / st + 1e-9) * st;
+   v[1] = MathFloor(total * (p2 / pc) / st + 1e-9) * st;
    v[2] = NormalizeDouble(total - v[0] - v[1], vd);
    double carry = 0;
    for(int i = 0; i < 3; i++)
@@ -726,8 +769,9 @@ double MinStopDist()
 
 int OpenSetup(const bool isLong, const int src)
   {
-   string tag = (src == SRC_M15) ? "M15" : (src == SRC_H1) ? "H1" : (src == SRC_H4) ? "H4" : "MEGA";
+   string tag = (src == SRC_M15) ? "M15" : (src == SRC_H1) ? "H1" : (src == SRC_H4) ? "H4" : (src == SRC_FOLLOW) ? "FOL" : "MEGA";
    string side = isLong ? "BUY" : "SELL";
+   bool mega = (src == SRC_MEGA);
 
    if(g_paused)
       return R_RETRY;
@@ -738,6 +782,11 @@ int OpenSetup(const bool isLong, const int src)
      }
    if(TimeCurrent() - g_lastOpenTime < InpCooldownSec)
       return R_RETRY;
+   if(InpMaxDailyLossPct > 0 && g_stNet <= -AccountInfoDouble(ACCOUNT_BALANCE) * InpMaxDailyLossPct / 100.0)
+     {
+      g_lastAction = "STOP: daily loss limit";
+      return R_FINAL;
+     }
    long sp = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
    if(sp > InpMaxSpreadPts)
      {
@@ -749,7 +798,7 @@ int OpenSetup(const bool isLong, const int src)
       g_lastAction = "AutoTrading OFF";
       return R_RETRY;
      }
-   if(InpBlockEntryOnFlip && InpExitOnGsrFlip && src != SRC_MEGA && g_ctx.gsrOK &&
+   if(InpBlockEntryOnFlip && InpExitOnGsrFlip && !mega && g_ctx.gsrOK &&
       ((isLong && g_ctx.gsrUp) || (!isLong && g_ctx.gsrDown)))
      {
       g_lastAction = "skip " + side + " " + tag + ": GSR flip";
@@ -767,22 +816,42 @@ int OpenSetup(const bool isLong, const int src)
    double minD = MinStopDist();
    int    dg = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
 
-   double slDist = g_atr * ((src == SRC_MEGA) ? InpMegaSlAtrMult : InpSlAtrMult);
-   if(slDist < minD)
-      slDist = minD;
-   double sl = isLong ? entry - slDist : entry + slDist;
-
+   double slDist = 0;
    double tp[3] = {0, 0, 0};
-   bool single = false;
-   if(src == SRC_MEGA)
+   double pc1 = InpTp1QtyPct, pc2 = InpTp2QtyPct, pc3 = InpTp3QtyPct;
+   double riskPct = InpRiskPct;
+
+   if(mega)
      {
-      single = true;
-      tp[0] = isLong ? entry + slDist * InpMegaRR : entry - slDist * InpMegaRR;
+      //--- SAFE MEGA exit plan: SL behind the MEGA candle, 3 targets in R, BE + trail after TP1, time stop
+      int sh = InpClosedBar ? 1 : 0;
+      double cl = iClose(_Symbol, PERIOD_CURRENT, sh);
+      if(MathAbs(entry - cl) > g_atr * InpMegaMaxChaseAtr)
+        {
+         g_lastAction = "skip " + side + " MEGA: chased";
+         return R_FINAL;
+        }
+      double ex = isLong ? iLow(_Symbol, PERIOD_CURRENT, sh) - g_atr * InpMegaSlBufAtr
+                  : iHigh(_Symbol, PERIOD_CURRENT, sh) + g_atr * InpMegaSlBufAtr;
+      double d = MathAbs(entry - ex);
+      if(d > g_atr * InpMegaMaxSlAtr)
+        {
+         g_lastAction = "skip " + side + " MEGA: SL too wide";
+         return R_FINAL;
+        }
+      slDist = MathMax(d, g_atr * InpMegaMinSlAtr);
+      tp[0] = isLong ? entry + slDist * InpMegaTp1R : entry - slDist * InpMegaTp1R;
+      tp[1] = isLong ? entry + slDist * InpMegaTp2R : entry - slDist * InpMegaTp2R;
+      tp[2] = isLong ? entry + slDist * InpMegaTp3R : entry - slDist * InpMegaTp3R;
+      pc1 = InpMegaQty1;
+      pc2 = InpMegaQty2;
+      pc3 = InpMegaQty3;
+      riskPct = InpMegaRiskPct;
      }
    else
      {
-      bool fv = FibValid(isLong, entry);
-      if(fv)
+      slDist = g_atr * InpSlAtrMult;
+      if(FibValid(isLong, entry))
         {
          tp[0] = g_fib.e1272;
          tp[1] = g_fib.e1618;
@@ -795,29 +864,43 @@ int OpenSetup(const bool isLong, const int src)
             g_lastAction = "skip " + side + " " + tag + ": no Fib TP";
             return R_FINAL;
            }
+         double rr = MathMax(slDist, minD) * InpFallbackRR;
          for(int i = 0; i < 3; i++)
-            tp[i] = isLong ? entry + slDist * InpFallbackRR * (i + 1) : entry - slDist * InpFallbackRR * (i + 1);
+            tp[i] = isLong ? entry + rr * (i + 1) : entry - rr * (i + 1);
         }
      }
-   // keep TPs beyond broker stop level
-   for(int i = 0; i < 3; i++)
+   if(slDist < minD)
+      slDist = minD;
+   double sl = isLong ? entry - slDist : entry + slDist;
+
+   for(int i = 0; i < 3; i++)   // keep TPs beyond broker stop level
      {
-      if(tp[i] == 0)
-         continue;
       if(isLong && tp[i] < entry + minD)
          tp[i] = entry + minD;
       if(!isLong && tp[i] > entry - minD)
          tp[i] = entry - minD;
      }
 
-   double total = CalcTotalLot(slDist);
+   double total = CalcTotalLot(slDist, riskPct);
+   double lpl = LossPerLot(slDist);
+   if(InpMaxRiskCapPct > 0 && lpl > 0 && total * lpl > AccountInfoDouble(ACCOUNT_EQUITY) * InpMaxRiskCapPct / 100.0)
+     {
+      g_lastAction = StringFormat("skip %s %s: risk %.2f too high", side, tag, total * lpl);
+      return R_FINAL;
+     }
    double vol[3] = {0, 0, 0};
-   if(single)
-      vol[0] = total;
-   else
-      SplitLots(total, vol);
+   SplitLots(total, vol, pc1, pc2, pc3);
+   int nLegs = 0, firstLeg = -1;
+   for(int i = 0; i < 3; i++)
+      if(vol[i] > 0)
+        {
+         nLegs++;
+         if(firstLeg < 0)
+            firstLeg = i;
+        }
+   if(nLegs == 1)
+      tp[firstLeg] = tp[2];   // single leg: aim at the far target, BE/trail starts when TP1 level is reached
 
-   // margin guard
    double need = 0, mg = 0;
    for(int i = 0; i < 3; i++)
       if(vol[i] > 0 && OrderCalcMargin(isLong ? ORDER_TYPE_BUY : ORDER_TYPE_SELL, _Symbol, vol[i], entry, mg))
@@ -834,8 +917,8 @@ int OpenSetup(const bool isLong, const int src)
      {
       if(vol[i] <= 0)
          continue;
-      string cm = StringFormat("%s-%s-TP%d", InpComment, tag, single ? 1 : i + 1);
-      double tpx = (tp[i] > 0) ? NormalizeDouble(tp[i], dg) : 0;
+      string cm = StringFormat("%s-%s-TP%d", InpComment, tag, i + 1);
+      double tpx = NormalizeDouble(tp[i], dg);
       bool ok = isLong ? g_trade.Buy(vol[i], _Symbol, 0, sl, tpx, cm)
                 : g_trade.Sell(vol[i], _Symbol, 0, sl, tpx, cm);
       if(ok)
@@ -847,10 +930,15 @@ int OpenSetup(const bool isLong, const int src)
    if(opened > 0)
      {
       g_lastOpenTime = TimeCurrent();
+      g_setupSrc = src;
+      g_setupLegs = opened;
+      g_tp1Done = false;
+      g_tp1Price = tp[0];
       g_lastAction = StringFormat("%s %s x%d legs", side, tag, opened);
       Print("Tomahawk: ", g_lastAction, " | entry=", DoubleToString(entry, dg), " SL=", DoubleToString(sl, dg),
             " TP1=", DoubleToString(tp[0], dg), " TP2=", DoubleToString(tp[1], dg), " TP3=", DoubleToString(tp[2], dg),
-            " lots=", DoubleToString(vol[0], 2), "/", DoubleToString(vol[1], 2), "/", DoubleToString(vol[2], 2));
+            " lots=", DoubleToString(vol[0], 2), "/", DoubleToString(vol[1], 2), "/", DoubleToString(vol[2], 2),
+            " risk=", DoubleToString(total * lpl, 2));
       return R_OPENED;
      }
    g_lastAction = "order failed " + side + " " + tag;
@@ -858,30 +946,47 @@ int OpenSetup(const bool isLong, const int src)
   }
 
 //==================================================================
-//  POSITION MANAGEMENT (GSR flip exit, BE, trailing)
+//  POSITION MANAGEMENT (GSR flip, TP1 -> BE + trailing, MEGA time stop)
 //==================================================================
 void ManagePositions()
   {
    int n = CountPos();
    if(n == 0)
-      return;
-
-   // GSR flip exit
-   if(InpExitOnGsrFlip && g_ctx.gsrOK)
      {
-      bool isLong = PosIsLong();
-      if((isLong && g_ctx.gsrUp) || (!isLong && g_ctx.gsrDown))
-        {
-         CloseAll("GSR flip");
-         return;
-        }
+      g_tp1Done = false;
+      return;
+     }
+   bool isLong = PosIsLong();
+
+   if(InpExitOnGsrFlip && g_ctx.gsrOK && ((isLong && g_ctx.gsrUp) || (!isLong && g_ctx.gsrDown)))
+     {
+      CloseAll("GSR flip");
+      return;
      }
 
-   if(g_atr <= 0 || (InpBeTriggerAtr <= 0 && InpTrailAtr <= 0))
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID), ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   if(!g_tp1Done)
+     {
+      bool reached = (g_tp1Price > 0) && (isLong ? bid >= g_tp1Price : ask <= g_tp1Price);
+      if(reached || (g_setupLegs > 1 && n < g_setupLegs))
+        {
+         g_tp1Done = true;
+         g_lastAction = "TP1 hit -> BE + trail";
+        }
+     }
+   if(g_setupSrc == SRC_MEGA && !g_tp1Done && InpMegaTimeStopMin > 0 &&
+      TimeCurrent() - g_lastOpenTime >= (long)InpMegaTimeStopMin * 60)
+     {
+      CloseAll("MEGA time stop");
       return;
+     }
+
+   bool doTrail = InpUseTrailing && InpTrailOnTP1;
+   if(!g_tp1Done || g_atr <= 0 || (!InpBEOnTP1 && !doTrail))
+      return;
+   double tm = (g_setupSrc == SRC_MEGA) ? InpMegaTrailAtr : InpTrailAtrMult;
    double minD = MinStopDist();
    int dg = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
-   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID), ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    for(int i = PositionsTotal() - 1; i >= 0; i--)
      {
       ulong tk = PositionGetTicket(i);
@@ -894,26 +999,25 @@ void ManagePositions()
       double sl = PositionGetDouble(POSITION_SL);
       double tpv = PositionGetDouble(POSITION_TP);
       double px = lg ? bid : ask;
-      double prof = lg ? px - op : op - px;
       double nsl = sl;
-      if(InpBeTriggerAtr > 0 && prof >= g_atr * InpBeTriggerAtr)
+      if(InpBEOnTP1)
         {
          double be = lg ? op + InpBeOffsetPts * _Point : op - InpBeOffsetPts * _Point;
-         if((lg && (sl == 0 || be > nsl)) || (!lg && (sl == 0 || be < nsl)))
+         if(sl == 0 || (lg && be > nsl) || (!lg && be < nsl))
             nsl = be;
         }
-      if(InpTrailAtr > 0 && prof >= g_atr * MathMax(InpTrailStartAtr, 0.0))
+      if(doTrail)
         {
-         double t = lg ? px - g_atr * InpTrailAtr : px + g_atr * InpTrailAtr;
-         if((lg && (nsl == 0 || t > nsl)) || (!lg && (nsl == 0 || t < nsl)))
+         double t = lg ? px - g_atr * tm : px + g_atr * tm;
+         if(nsl == 0 || (lg && t > nsl) || (!lg && t < nsl))
             nsl = t;
         }
       nsl = NormalizeDouble(nsl, dg);
-      if(nsl == sl)
+      if(MathAbs(nsl - sl) < _Point)
          continue;
       if(MathAbs(px - nsl) < minD)
          continue;
-      if(MathAbs(nsl - sl) < _Point)
+      if((lg && nsl >= px) || (!lg && nsl <= px))
          continue;
       g_trade.PositionModify(tk, nsl, tpv);
      }
@@ -1166,7 +1270,7 @@ void DrawDash()
 
    // SIGNAL
    Card("C3", x3, y1, cw, ch, "SIGNAL");
-   color sc = g_sigText == "BUY" ? CGRN : (g_sigText == "SELL" ? CRED : C'130,140,155');
+   color sc = g_sigText == "BUY" ? CGRN : (g_sigText == "SELL" ? CRED : (StringFind(g_sigText, "F-") == 0 ? C'90,150,255' : C'130,140,155'));
    Lbl("S_BIG", x3 + 10, y1 + 26, g_sigText, sc, ANCHOR_LEFT_UPPER, 20, true);
    Lbl("S_CF", x3 + cw - 10, y1 + 32, "conf " + F(g_conf, 2), CLBL, ANCHOR_RIGHT_UPPER, 10);
    int bx = x3 + 52, bwid = cw - 52 - 56;
@@ -1254,7 +1358,7 @@ void DrawDash()
       double pr = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
       bool be = sl > 0 && ((lg && sl >= op) || (!lg && sl <= op));
       double px = lg ? bid : ask;
-      bool tl = InpTrailAtr > 0 && g_atr > 0 && ((lg ? px - op : op - px) >= g_atr * InpTrailStartAtr);
+      bool tl = InpUseTrailing && g_tp1Done;
       int yy = y3 + 28 + LH * (1 + shown);
       string r = "R" + IntegerToString(shown) + "_";
       Lbl(r + "0", px0 + cols[0], yy, IntegerToString((long)tk), CVAL);
@@ -1336,21 +1440,22 @@ void Process()
       return;
    g_lastProcMs = now;
 
-   bool trig[4][2];
+   bool trig[5][2];
    Evaluate(trig);
    ManagePositions();
 
-   int srcOn[4];
+   int srcOn[5];
    srcOn[0] = InpTradeM15 ? 1 : 0;
    srcOn[1] = InpTradeH1 ? 1 : 0;
    srcOn[2] = InpTradeH4 ? 1 : 0;
    srcOn[3] = InpTradeMega ? 1 : 0;
+   srcOn[4] = InpTradeFollow ? 1 : 0;
    int s = InpClosedBar ? 1 : 0;
-   for(int i = 0; i < 4; i++)
+   for(int i = 0; i < 5; i++)
      {
       if(!srcOn[i])
          continue;
-      datetime bt = (i < 3) ? iTime(_Symbol, g_h[i].tf, s) : iTime(_Symbol, PERIOD_CURRENT, s);
+      datetime bt = (i < 3 || i == 4) ? iTime(_Symbol, g_h[i == 4 ? 0 : i].tf, s) : iTime(_Symbol, PERIOD_CURRENT, s);
       for(int d = 0; d < 2; d++)
         {
          if(!trig[i][d] || bt == g_lastTrig[i][d])
@@ -1400,7 +1505,7 @@ int OnInit()
    g_fib.ok = false;
    ArrayInitialize(g_sBull, 0);
    ArrayInitialize(g_sBear, 0);
-   for(int i = 0; i < 4; i++)
+   for(int i = 0; i < 5; i++)
       for(int d = 0; d < 2; d++)
          g_lastTrig[i][d] = 0;
    g_lastProcMs = 0;
