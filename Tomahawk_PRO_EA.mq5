@@ -36,6 +36,12 @@ input int              InpCooldownSec      = 60;            // Cooldown after op
 input bool             InpStartPaused      = false;         // Start in PAUSE mode
 input bool             InpLevelMode        = false;         // TEST ONLY: enter whenever signal is ON (not only on its first bar)
 
+input group "=== SIMPLE MODE (easy: 1 order, fixed SL/TP) ==="
+input bool             InpSimpleMode       = true;          // true = open ONE order per signal, fixed SL/TP, no extra filters
+input double           InpSimpleLot        = 0.01;          // Lot per order
+input double           InpSimpleSL         = 8.0;           // SL distance in PRICE units (USD), e.g. 8.0 = $8
+input double           InpSimpleTP         = 12.0;          // TP distance in PRICE units (USD), e.g. 12.0 = $12
+
 input group "=== Which signals open orders ==="
 input bool             InpTradeM15         = true;          // Trade BUY/SELL (M15)
 input bool             InpTradeH1          = false;         // Trade ACTION BUY/SELL (H1)
@@ -578,6 +584,11 @@ bool FibValid(const bool isLong, const double entry)
 //==================================================================
 //  EVALUATE ALL SIGNALS (state for dashboard)
 //==================================================================
+bool LevelOn()
+  {
+   return InpLevelMode || InpSimpleMode;
+  }
+
 void Evaluate(bool &trig[][2])
   {
    int s = InpClosedBar ? 1 : 0;
@@ -594,8 +605,8 @@ void Evaluate(bool &trig[][2])
       g_ts[i]   = t;
       g_now[i]  = cur;
       g_prev[i] = prv;
-      trig[i][0] = ok1 && cur.buy  && (InpLevelMode || (ok2 && !prv.buy));
-      trig[i][1] = ok1 && cur.sell && (InpLevelMode || (ok2 && !prv.sell));
+      trig[i][0] = ok1 && cur.buy  && (LevelOn() || (ok2 && !prv.buy));
+      trig[i][1] = ok1 && cur.sell && (LevelOn() || (ok2 && !prv.sell));
       if(i == 0)
          g_ctx = cx;
      }
@@ -620,8 +631,8 @@ void Evaluate(bool &trig[][2])
    g_bigBuy = b0;
    g_bigSell = s0;
    g_volRatio = ratio;
-   trig[3][0] = b0 && (InpLevelMode || !b1);
-   trig[3][1] = s0 && (InpLevelMode || !s1);
+   trig[3][0] = b0 && (LevelOn() || !b1);
+   trig[3][1] = s0 && (LevelOn() || !s1);
 
    // Follow BUY / SELL (M15)
    TrendState tp15;
@@ -632,8 +643,8 @@ void Evaluate(bool &trig[][2])
    bool fs1 = pv && tp15.bearOK && tp15.rsi >= InpFollowSellLow && tp15.rsi <= InpFollowSellHigh;
    g_folBuy = fb0;
    g_folSell = fs0;
-   trig[4][0] = fb0 && (InpLevelMode || !fb1);
-   trig[4][1] = fs0 && (InpLevelMode || !fs1);
+   trig[4][0] = fb0 && (LevelOn() || !fb1);
+   trig[4][1] = fs0 && (LevelOn() || !fs1);
 
    // ATR
    double a = Buf(g_atrH, 1);
@@ -768,6 +779,49 @@ double MinStopDist()
    return MathMax(MathMax(stops, frz), sp) + 2 * _Point;
   }
 
+//--- SIMPLE MODE: one market order, fixed SL/TP in price units, no extra filters
+int OpenSimple(const bool isLong, const string tag)
+  {
+   string side = isLong ? "BUY" : "SELL";
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID), ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double entry = isLong ? ask : bid;
+   double minD = MinStopDist();
+   int dg = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+   double slD = MathMax(InpSimpleSL, minD), tpD = MathMax(InpSimpleTP, minD);
+   double sl = NormalizeDouble(isLong ? entry - slD : entry + slD, dg);
+   double tp = NormalizeDouble(isLong ? entry + tpD : entry - tpD, dg);
+
+   double minL = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN), maxL = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+   double st = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   double vol = InpSimpleLot;
+   if(st > 0)
+      vol = MathFloor(vol / st + 1e-9) * st;
+   vol = NormalizeDouble(MathMax(minL, MathMin(maxL, vol)), VolDigits());
+
+   double mg = 0;
+   if(OrderCalcMargin(isLong ? ORDER_TYPE_BUY : ORDER_TYPE_SELL, _Symbol, vol, entry, mg) && mg > AccountInfoDouble(ACCOUNT_MARGIN_FREE))
+     {
+      g_lastAction = "skip " + side + " " + tag + ": no margin";
+      return R_FINAL;
+     }
+   string cm = StringFormat("%s-%s", InpComment, tag);
+   bool ok = isLong ? g_trade.Buy(vol, _Symbol, 0, sl, tp, cm) : g_trade.Sell(vol, _Symbol, 0, sl, tp, cm);
+   if(ok)
+     {
+      g_lastOpenTime = TimeCurrent();
+      g_setupSrc = -1;
+      g_setupLegs = 1;
+      g_tp1Done = false;
+      g_tp1Price = 0;
+      g_lastAction = StringFormat("%s %s %.2f lot OK", side, tag, vol);
+      Print("Tomahawk SIMPLE: ", g_lastAction, " entry=", DoubleToString(entry, dg), " SL=", DoubleToString(sl, dg), " TP=", DoubleToString(tp, dg));
+      return R_OPENED;
+     }
+   g_lastAction = StringFormat("order failed %s %s (%d)", side, tag, g_trade.ResultRetcode());
+   Print("Tomahawk SIMPLE: order failed retcode=", g_trade.ResultRetcode(), " ", g_trade.ResultRetcodeDescription());
+   return R_RETRY;
+  }
+
 int OpenSetup(const bool isLong, const int src)
   {
    string tag = (src == SRC_M15) ? "M15" : (src == SRC_H1) ? "H1" : (src == SRC_H4) ? "H4" : (src == SRC_FOLLOW) ? "FOL" : "MEGA";
@@ -799,6 +853,8 @@ int OpenSetup(const bool isLong, const int src)
       g_lastAction = "AutoTrading OFF";
       return R_RETRY;
      }
+   if(InpSimpleMode)
+      return OpenSimple(isLong, tag);
    if(InpBlockEntryOnFlip && InpExitOnGsrFlip && !mega && g_ctx.gsrOK &&
       ((isLong && g_ctx.gsrUp) || (!isLong && g_ctx.gsrDown)))
      {
@@ -959,7 +1015,7 @@ void ManagePositions()
      }
    bool isLong = PosIsLong();
 
-   if(InpExitOnGsrFlip && g_ctx.gsrOK && ((isLong && g_ctx.gsrUp) || (!isLong && g_ctx.gsrDown)))
+   if(InpExitOnGsrFlip && !InpSimpleMode && g_ctx.gsrOK && ((isLong && g_ctx.gsrUp) || (!isLong && g_ctx.gsrDown)))
      {
       CloseAll("GSR flip");
       return;
