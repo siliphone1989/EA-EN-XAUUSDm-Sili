@@ -121,6 +121,7 @@ input double           InpFixedLot         = 0.03;          // Fixed TOTAL lot p
 input double           InpRiskPct          = 2.0;           // Risk % of equity per setup (LOT_RISK)
 
 input group "=== Risk control / BE / Trailing (latest Pine) ==="
+input double           InpBeAtR            = 1.0;           // Move SL to BE (then trail) when profit >= R x initial SL (0 = off, 1.0 = at 1R)
 input bool             InpBEOnTP1          = true;          // Move SL to BE after TP1
 input int              InpBeOffsetPts      = 20;            // BE offset (points, covers spread)
 input bool             InpUseTrailing      = true;          // Use trailing SL
@@ -213,6 +214,7 @@ string   g_lastResult = "-";
 int      g_setupSrc = -1, g_setupLegs = 0;
 bool     g_tp1Done = false;
 bool     g_testDone = false;
+double   g_riskDist = 0;          // initial SL distance of current setup (1R)
 double   g_tp1Price = 0;
 bool     g_folBuy = false, g_folSell = false;
 
@@ -816,6 +818,7 @@ int OpenSimple(const bool isLong, const string tag)
       g_setupLegs = 1;
       g_tp1Done = false;
       g_tp1Price = 0;
+      g_riskDist = 0;
       g_lastAction = StringFormat("%s %s %.2f lot OK", side, tag, vol);
       Print("Tomahawk SIMPLE: ", g_lastAction, " entry=", DoubleToString(entry, dg), " SL=", DoubleToString(sl, dg), " TP=", DoubleToString(tp, dg));
       return R_OPENED;
@@ -994,6 +997,7 @@ int OpenSetup(const bool isLong, const int src)
       g_setupLegs = opened;
       g_tp1Done = false;
       g_tp1Price = tp[0];
+      g_riskDist = slDist;
       g_lastAction = StringFormat("%s %s x%d legs", side, tag, opened);
       Print("Tomahawk: ", g_lastAction, " | entry=", DoubleToString(entry, dg), " SL=", DoubleToString(sl, dg),
             " TP1=", DoubleToString(tp[0], dg), " TP2=", DoubleToString(tp[1], dg), " TP3=", DoubleToString(tp[2], dg),
@@ -1008,6 +1012,19 @@ int OpenSetup(const bool isLong, const int src)
 //==================================================================
 //  POSITION MANAGEMENT (GSR flip, TP1 -> BE + trailing, MEGA time stop)
 //==================================================================
+double FirstOpenPrice()
+  {
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+     {
+      ulong tk = PositionGetTicket(i);
+      if(tk == 0)
+         continue;
+      if(PositionGetInteger(POSITION_MAGIC) == InpMagic && PositionGetString(POSITION_SYMBOL) == _Symbol)
+         return PositionGetDouble(POSITION_PRICE_OPEN);
+     }
+   return 0;
+  }
+
 void ManagePositions()
   {
    int n = CountPos();
@@ -1032,6 +1049,17 @@ void ManagePositions()
         {
          g_tp1Done = true;
          g_lastAction = "TP1 hit -> BE + trail";
+        }
+     }
+   // BE + trailing trigger at 1R (R = initial SL distance)
+   if(!g_tp1Done && InpBeAtR > 0 && g_riskDist > 0)
+     {
+      double op0 = FirstOpenPrice();
+      double prof0 = isLong ? bid - op0 : op0 - ask;
+      if(op0 > 0 && prof0 >= g_riskDist * InpBeAtR)
+        {
+         g_tp1Done = true;
+         g_lastAction = StringFormat("%.1fR reached -> BE + trail", InpBeAtR);
         }
      }
    if(g_setupSrc == SRC_MEGA && !g_tp1Done && InpMegaTimeStopMin > 0 &&
