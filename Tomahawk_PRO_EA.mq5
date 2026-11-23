@@ -30,7 +30,7 @@ input long             InpMagic            = 20261120;      // Magic number
 input string           InpComment          = "TMH";         // Order comment prefix
 input ENUM_TIMEFRAMES  InpSignalTF         = PERIOD_M15;    // Signal TF (M15)
 input bool             InpClosedBar        = true;          // Use CLOSED bar signal (false = realtime/forming bar)
-input int              InpMaxSpreadPts     = 40;            // Max spread (points) to open order
+input int              InpMaxSpreadPts     = 400;           // Max spread (points; XAUUSDm has 3 digits: 400 pts = $0.40)
 input int              InpDeviation        = 30;            // Max slippage (points)
 input int              InpCooldownSec      = 60;            // Cooldown after opening a setup (sec)
 input bool             InpStartPaused      = false;         // Start in PAUSE mode
