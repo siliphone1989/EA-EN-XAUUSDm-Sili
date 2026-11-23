@@ -34,6 +34,8 @@ input int              InpMaxSpreadPts     = 400;           // Max spread (point
 input int              InpDeviation        = 30;            // Max slippage (points)
 input int              InpCooldownSec      = 60;            // Cooldown after opening a setup (sec)
 input bool             InpStartPaused      = false;         // Start in PAUSE mode
+input bool             InpTestOrderNow     = false;         // TEST: open ONE order right now (needs SIMPLE MODE), then turn off
+input bool             InpTestBuy          = true;          // TEST order side: true = BUY, false = SELL
 input bool             InpLevelMode        = false;         // TEST ONLY: enter whenever signal is ON (not only on its first bar)
 
 input group "=== SIMPLE MODE (easy: 1 order, fixed SL/TP) ==="
@@ -210,6 +212,7 @@ string   g_lastAction = "-";
 string   g_lastResult = "-";
 int      g_setupSrc = -1, g_setupLegs = 0;
 bool     g_tp1Done = false;
+bool     g_testDone = false;
 double   g_tp1Price = 0;
 bool     g_folBuy = false, g_folSell = false;
 
@@ -1500,6 +1503,14 @@ void Process()
    bool trig[5][2];
    Evaluate(trig);
    ManagePositions();
+
+   // one-shot test order (independent of signals)
+   if(InpTestOrderNow && !g_testDone && !g_paused)
+     {
+      int tr = OpenSetup(InpTestBuy, SRC_M15);
+      if(tr != R_RETRY)
+         g_testDone = true;
+     }
 
    int srcOn[5];
    srcOn[0] = InpTradeM15 ? 1 : 0;
