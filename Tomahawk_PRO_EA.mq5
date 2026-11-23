@@ -34,6 +34,7 @@ input int              InpMaxSpreadPts     = 400;           // Max spread (point
 input int              InpDeviation        = 30;            // Max slippage (points)
 input int              InpCooldownSec      = 60;            // Cooldown after opening a setup (sec)
 input bool             InpStartPaused      = false;         // Start in PAUSE mode
+input bool             InpLevelMode        = false;         // TEST ONLY: enter whenever signal is ON (not only on its first bar)
 
 input group "=== Which signals open orders ==="
 input bool             InpTradeM15         = true;          // Trade BUY/SELL (M15)
@@ -593,8 +594,8 @@ void Evaluate(bool &trig[][2])
       g_ts[i]   = t;
       g_now[i]  = cur;
       g_prev[i] = prv;
-      trig[i][0] = ok1 && ok2 && cur.buy  && !prv.buy;
-      trig[i][1] = ok1 && ok2 && cur.sell && !prv.sell;
+      trig[i][0] = ok1 && cur.buy  && (InpLevelMode || (ok2 && !prv.buy));
+      trig[i][1] = ok1 && cur.sell && (InpLevelMode || (ok2 && !prv.sell));
       if(i == 0)
          g_ctx = cx;
      }
@@ -619,8 +620,8 @@ void Evaluate(bool &trig[][2])
    g_bigBuy = b0;
    g_bigSell = s0;
    g_volRatio = ratio;
-   trig[3][0] = b0 && !b1;
-   trig[3][1] = s0 && !s1;
+   trig[3][0] = b0 && (InpLevelMode || !b1);
+   trig[3][1] = s0 && (InpLevelMode || !s1);
 
    // Follow BUY / SELL (M15)
    TrendState tp15;
@@ -631,8 +632,8 @@ void Evaluate(bool &trig[][2])
    bool fs1 = pv && tp15.bearOK && tp15.rsi >= InpFollowSellLow && tp15.rsi <= InpFollowSellHigh;
    g_folBuy = fb0;
    g_folSell = fs0;
-   trig[4][0] = fb0 && !fb1;
-   trig[4][1] = fs0 && !fs1;
+   trig[4][0] = fb0 && (InpLevelMode || !fb1);
+   trig[4][1] = fs0 && (InpLevelMode || !fs1);
 
    // ATR
    double a = Buf(g_atrH, 1);
@@ -1122,7 +1123,7 @@ void Lbl(const string id, const int x, const int y, const string txt, const colo
    ObjectSetInteger(0, n, OBJPROP_COLOR, c);
    ObjectSetInteger(0, n, OBJPROP_FONTSIZE, fs);
    ObjectSetString(0, n, OBJPROP_FONT, bold ? InpFont + " Bold" : InpFont);
-   ObjectSetString(0, n, OBJPROP_TEXT, txt);
+   ObjectSetString(0, n, OBJPROP_TEXT, StringLen(txt) == 0 ? " " : txt);   // empty text would show "Label"
   }
 
 void Btn(const string id, const int x, const int y, const int w, const int h, const string txt, const color bg, const color fg)
