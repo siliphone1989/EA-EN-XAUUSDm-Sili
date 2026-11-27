@@ -5,7 +5,7 @@
 //|  Symbol   : XAUUSDm (any gold symbol)                            |
 //|                                                                  |
 //|  Signals  : M15 / H1 / H4 EMA(14/21/50/75/100) stack + RSI zone, |
-//|             GVZ bounce/retrace, GSR (Gold/Silver ratio) bias,    |
+//|             GSR (Gold/Silver ratio) bias,                        |
 //|             MEGA big-volume candle.                              |
 //|  Exits    : SL = ATR(H1) x mult, TP1/TP2/TP3 = H4 Fib expansion  |
 //|             1.272 / 1.618 / 2.0 (3 split positions),             |
@@ -63,16 +63,6 @@ input double           InpFollowBuyLow     = 30.0;          // Follow BUY RSI lo
 input double           InpFollowBuyHigh    = 50.0;          // Follow BUY RSI high
 input double           InpFollowSellLow    = 60.0;          // Follow SELL RSI low
 input double           InpFollowSellHigh   = 75.0;          // Follow SELL RSI high
-
-input group "=== GVZ (CBOE gold volatility) ==="
-input string           InpGvzSymbol        = "";            // GVZ symbol in your broker (empty = disabled)
-input double           InpGvzBuyLow        = 15.0;
-input double           InpGvzBuyHigh       = 20.0;
-input int              InpGvzBuyLookback   = 24;
-input double           InpGvzBouncePct     = 5.0;
-input int              InpGvzPeakLookback  = 48;
-input double           InpGvzRetracePct    = 5.0;
-input double           InpGvzAbnLow        = 15.0;
 
 input group "=== GSR (Gold/Silver ratio) ==="
 input bool             InpUseGSR           = true;          // Use GSR filter
@@ -165,8 +155,8 @@ struct TrendState
 
 struct Ctx
   {
-   bool   gvzOK, gvzBuyRaw, gvzSellRaw, gsrOK, gsrUp, gsrDown;
-   double gvz, gvzUp, gvzDrop, gsr, gsrChg;
+   bool   gsrOK, gsrUp, gsrDown;
+   double gsr, gsrChg;
   };
 
 struct Sig
@@ -200,9 +190,8 @@ struct LogRow
 CTrade   g_trade;
 TFH      g_h[3];                 // M15(signal), H1, H4
 int      g_atrH = INVALID_HANDLE;
-string   g_gvzSym = "";
 string   g_silver = "";
-bool     g_gvzOn = false, g_gsrOn = false;
+bool     g_gsrOn = false;
 
 bool     g_paused = false;
 bool     g_minimized = false;
@@ -229,7 +218,7 @@ double     g_atr = 0.0;
 FibData    g_fib;
 datetime   g_fibBar = 0;
 ulong      g_fibTry = 0;
-double     g_sBull[6], g_sBear[6];
+double     g_sBull[5], g_sBear[5];
 double     g_totBull = 0, g_totBear = 0;
 string     g_sigText = "HOLD";
 double     g_conf = 0;
@@ -366,42 +355,11 @@ bool Trend(const TFH &h, const int shift, TrendState &t)
    return true;
   }
 
-//--- GVZ + GSR context at a given time (slow context, H1 / D1 based)
+//--- GSR context at a given time (slow context, D1 based)
 void GetCtx(const datetime tm, Ctx &c)
   {
-   c.gvzOK = false; c.gvzBuyRaw = false; c.gvzSellRaw = false;
    c.gsrOK = false; c.gsrUp = false; c.gsrDown = false;
-   c.gvz = 0; c.gvzUp = 0; c.gvzDrop = 0; c.gsr = 0; c.gsrChg = 0;
-
-   // ---- GVZ
-   if(g_gvzOn)
-     {
-      int idx = iBarShift(g_gvzSym, PERIOD_H1, tm, false);
-      int need = (int)MathMax(InpGvzPeakLookback, InpGvzBuyLookback);
-      double cl[];
-      ArraySetAsSeries(cl, true);
-      if(idx >= 0 && CopyClose(g_gvzSym, PERIOD_H1, idx, need, cl) >= need)
-        {
-         c.gvz = cl[0];
-         double pk = cl[0], lw = cl[0];
-         for(int i = 0; i < InpGvzPeakLookback; i++)
-            if(cl[i] > pk)
-               pk = cl[i];
-         bool touched = false;
-         for(int i = 0; i < InpGvzBuyLookback; i++)
-           {
-            if(cl[i] < lw)
-               lw = cl[i];
-            if(cl[i] >= InpGvzBuyLow && cl[i] <= InpGvzBuyHigh)
-               touched = true;
-           }
-         c.gvzDrop    = pk > 0 ? (pk - c.gvz) / pk * 100.0 : 0.0;
-         c.gvzUp      = lw > 0 ? (c.gvz - lw) / lw * 100.0 : 0.0;
-         c.gvzBuyRaw  = touched && c.gvzUp >= InpGvzBouncePct;
-         c.gvzSellRaw = (c.gvz >= InpGvzAbnLow) && (c.gvzDrop >= InpGvzRetracePct);
-         c.gvzOK      = true;
-        }
-     }
+   c.gsr = 0; c.gsrChg = 0;
 
    // ---- GSR (D1)
    if(g_gsrOn)
@@ -440,12 +398,10 @@ bool State(const TFH &h, const int shift, Sig &s, TrendState &t, Ctx &c)
    GetCtx(tm, c);
    bool buyCore  = t.bullOK && t.rsi >= InpBuyLow  && t.rsi <= InpBuyHigh;
    bool sellCore = t.bearOK && t.rsi >= InpSellLow && t.rsi <= InpSellHigh;
-   bool gvzBuy   = c.gvzOK && c.gvzBuyRaw  && t.bullOK;
-   bool gvzSell  = c.gvzOK && c.gvzSellRaw && t.bearOK;
    bool gsrBuy   = c.gsrOK && c.gsrDown && t.bullOK;
    bool gsrSell  = c.gsrOK && c.gsrUp   && t.bearOK;
-   s.buy  = buyCore  || gvzBuy  || gsrBuy;
-   s.sell = sellCore || gvzSell || gsrSell;
+   s.buy  = buyCore  || gsrBuy;
+   s.sell = sellCore || gsrSell;
    return true;
   }
 
@@ -659,7 +615,7 @@ void Evaluate(bool &trig[][2])
    CalcFib();
 
    // ---- dashboard score (informational) ----
-   double w[6] = {0.25, 0.25, 0.15, 0.15, 0.10, 0.10};
+   double w[5] = {0.30, 0.30, 0.20, 0.10, 0.10};   // Trend, RSI zone, GSR, Volume, Fib TP
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID), ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    bool fL = FibValid(true, ask), fS = FibValid(false, bid);
    TrendState m = g_ts[0];
@@ -672,17 +628,15 @@ void Evaluate(bool &trig[][2])
       if(m.rsi >= InpBuyLow && m.rsi <= InpBuyHigh)   g_sBull[1] = w[1];
       if(m.rsi >= InpSellLow && m.rsi <= InpSellHigh) g_sBear[1] = w[1];
      }
-   if(g_ctx.gvzOK && g_ctx.gvzBuyRaw)  g_sBull[2] = w[2];
-   if(g_ctx.gvzOK && g_ctx.gvzSellRaw) g_sBear[2] = w[2];
-   if(g_ctx.gsrOK && g_ctx.gsrDown)    g_sBull[3] = w[3];
-   if(g_ctx.gsrOK && g_ctx.gsrUp)      g_sBear[3] = w[3];
-   if(g_bigBuy)  g_sBull[4] = w[4];
-   if(g_bigSell) g_sBear[4] = w[4];
-   if(fL) g_sBull[5] = w[5];
-   if(fS) g_sBear[5] = w[5];
+   if(g_ctx.gsrOK && g_ctx.gsrDown)    g_sBull[2] = w[2];
+   if(g_ctx.gsrOK && g_ctx.gsrUp)      g_sBear[2] = w[2];
+   if(g_bigBuy)  g_sBull[3] = w[3];
+   if(g_bigSell) g_sBear[3] = w[3];
+   if(fL) g_sBull[4] = w[4];
+   if(fS) g_sBear[4] = w[4];
    g_totBull = 0;
    g_totBear = 0;
-   for(int i = 0; i < 6; i++)
+   for(int i = 0; i < 5; i++)
      {
       g_totBull += g_sBull[i];
       g_totBear += g_sBear[i];
@@ -1348,12 +1302,11 @@ void DrawDash()
    Row("M3", x2, y1 + 30 + 2 * LH, cw, "Ask", F(ask, dg), CGRN);
    Row("M4", x2, y1 + 30 + 3 * LH, cw, "Spread (pts)", StringFormat("%d / max %d", sprd, InpMaxSpreadPts), sprd > InpMaxSpreadPts ? CRED : CGRN);
    Row("M5", x2, y1 + 30 + 4 * LH, cw, "ATR (H1)", g_atr > 0 ? F(g_atr, 3) : "-");
-   Row("M6", x2, y1 + 30 + 5 * LH, cw, "GVZ (H1)", g_ctx.gvzOK ? F(g_ctx.gvz, 2) : (g_gvzOn ? "-" : "off"));
    string gb = !g_ctx.gsrOK ? "-" : (g_ctx.gsrUp ? "SELL BIAS" : (g_ctx.gsrDown ? "BUY BIAS" : "NEUTRAL"));
-   Row("M7", x2, y1 + 30 + 6 * LH, cw, "GSR %chg / bias", g_ctx.gsrOK ? StringFormat("%s%% %s", F(g_ctx.gsrChg, 2), gb) : (g_gsrOn ? "-" : "off"),
+   Row("M7", x2, y1 + 30 + 5 * LH, cw, "GSR %chg / bias", g_ctx.gsrOK ? StringFormat("%s%% %s", F(g_ctx.gsrChg, 2), gb) : (g_gsrOn ? "-" : "off"),
        g_ctx.gsrUp ? CRED : (g_ctx.gsrDown ? CGRN : CVAL));
    string fz = !g_fib.ok ? "-" : (g_fib.dir == 1 ? "UPSWING" : "DOWNSWING");
-   Row("M8", x2, y1 + 30 + 7 * LH, cw, "H4 swing / Fib TP", fz + (FibValid(g_fib.dir == 1, g_fib.dir == 1 ? ask : bid) ? " / VALID" : " / --"),
+   Row("M8", x2, y1 + 30 + 6 * LH, cw, "H4 swing / Fib TP", fz + (FibValid(g_fib.dir == 1, g_fib.dir == 1 ? ask : bid) ? " / VALID" : " / --"),
        FibValid(g_fib.dir == 1, g_fib.dir == 1 ? ask : bid) ? CGRN : CLBL);
 
    // SIGNAL
@@ -1397,9 +1350,9 @@ void DrawDash()
    Card("C5", x2, y2, cw, ch, "SCORE BREAKDOWN");
    Lbl("B_H1", x2 + cw - 70, y2 + 6, "BULL", CGRN, ANCHOR_RIGHT_UPPER, 9, true);
    Lbl("B_H2", x2 + cw - 10, y2 + 6, "BEAR", CRED, ANCHOR_RIGHT_UPPER, 9, true);
-   string nm[6] = {"Trend", "RSI zone", "GVZ", "GSR", "Volume", "Fib TP"};
-   double wt[6] = {0.25, 0.25, 0.15, 0.15, 0.10, 0.10};
-   for(int i = 0; i < 6; i++)
+   string nm[5] = {"Trend", "RSI zone", "GSR", "Volume", "Fib TP"};
+   double wt[5] = {0.30, 0.30, 0.20, 0.10, 0.10};
+   for(int i = 0; i < 5; i++)
      {
       int yy = y2 + 30 + i * LH;
       Lbl("B" + IntegerToString(i) + "n", x2 + 10, yy, nm[i], CLBL);
@@ -1407,10 +1360,10 @@ void DrawDash()
       Lbl("B" + IntegerToString(i) + "b", x2 + cw - 70, yy, F(g_sBull[i], 2), g_sBull[i] > 0 ? CGRN : CLBL, ANCHOR_RIGHT_UPPER);
       Lbl("B" + IntegerToString(i) + "r", x2 + cw - 10, yy, F(g_sBear[i], 2), g_sBear[i] > 0 ? CRED : CLBL, ANCHOR_RIGHT_UPPER);
      }
-   Rect("B_LN", x2 + 10, y2 + 30 + 6 * LH + 2, cw - 20, 1, CBRD, CBRD);
-   Lbl("B_TN", x2 + 10, y2 + 30 + 6 * LH + 6, "TOTAL", CVAL);
-   Lbl("B_Tb", x2 + cw - 70, y2 + 30 + 6 * LH + 6, F(g_totBull, 2), CGRN, ANCHOR_RIGHT_UPPER);
-   Lbl("B_Tr", x2 + cw - 10, y2 + 30 + 6 * LH + 6, F(g_totBear, 2), CRED, ANCHOR_RIGHT_UPPER);
+   Rect("B_LN", x2 + 10, y2 + 30 + 5 * LH + 2, cw - 20, 1, CBRD, CBRD);
+   Lbl("B_TN", x2 + 10, y2 + 30 + 5 * LH + 6, "TOTAL", CVAL);
+   Lbl("B_Tb", x2 + cw - 70, y2 + 30 + 5 * LH + 6, F(g_totBull, 2), CGRN, ANCHOR_RIGHT_UPPER);
+   Lbl("B_Tr", x2 + cw - 10, y2 + 30 + 5 * LH + 6, F(g_totBear, 2), CRED, ANCHOR_RIGHT_UPPER);
 
    Card("C6", x3, y2, cw, ch, "TODAY STATS");
    double wr = g_stClosed > 0 ? 100.0 * g_stWin / g_stClosed : 0;
@@ -1588,10 +1541,6 @@ int OnInit()
      }
 
    // optional symbols
-   g_gvzSym = InpGvzSymbol;
-   g_gvzOn = (StringLen(g_gvzSym) > 0 && SymbolSelect(g_gvzSym, true));
-   if(StringLen(g_gvzSym) > 0 && !g_gvzOn)
-      Print("Tomahawk: GVZ symbol not found -> GVZ conditions disabled");
    g_silver = InpSilverSymbol;
    g_gsrOn = (InpUseGSR && StringLen(g_silver) > 0 && SymbolSelect(g_silver, true));
    if(InpUseGSR && !g_gsrOn)
