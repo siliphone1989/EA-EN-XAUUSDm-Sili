@@ -652,10 +652,10 @@ void Evaluate(bool &trig[][2])
      }
    g_conf = MathMax(g_totBull, g_totBear);
    g_sigText = "HOLD";
-   if(g_now[0].buy && fL)
+   if(g_now[0].buy && (fL || !InpRequireFib))
       g_sigText = "BUY";
    else
-      if(g_now[0].sell && fS)
+      if(g_now[0].sell && (fS || !InpRequireFib))
          g_sigText = "SELL";
       else
          if(g_folBuy)
