@@ -36,7 +36,7 @@ input int              InpCooldownSec      = 60;            // Cooldown after op
 input bool             InpStartPaused      = false;         // Start in PAUSE mode
 input bool             InpTestOrderNow     = false;         // TEST: open ONE order right now (needs SIMPLE MODE), then turn off
 input bool             InpTestBuy          = true;          // TEST order side: true = BUY, false = SELL
-input bool             InpLevelMode        = false;         // TEST ONLY: enter whenever signal is ON (not only on its first bar)
+input bool             InpLevelMode        = false;         // TEST ONLY: enter whenever signal is ON (chases the move!). false = like TradingView labels
 
 input group "=== SIMPLE MODE (easy: 1 order, fixed SL/TP) ==="
 input bool             InpSimpleMode       = true;          // true = open ONE order per signal, fixed SL/TP, no extra filters
@@ -67,7 +67,9 @@ input double           InpFollowSellHigh   = 75.0;          // Follow SELL RSI h
 input group "=== GSR (Gold/Silver ratio) ==="
 input bool             InpUseGSR           = true;          // Use GSR filter
 input string           InpSilverSymbol     = "XAGUSDm";     // Silver symbol (same suffix as gold)
-input int              InpGsrLookback      = 10;            // GSR %change lookback (D1 bars)
+input bool             InpGsrPineMode      = true;          // true = same as TradingView Pine: compare with value N CHART bars ago
+input ENUM_TIMEFRAMES  InpGsrChartTF       = PERIOD_H1;     // Chart timeframe you watch in TradingView (Pine mode)
+input int              InpGsrLookback      = 10;            // GSR %change lookback (Pine mode: chart bars; else D1 bars)
 input double           InpGsrUpPct         = 0.6;           // GSR UP >= %  => SELL bias
 input double           InpGsrDnPct         = 0.6;           // GSR DOWN <= % => BUY bias
 input bool             InpExitOnGsrFlip    = true;          // Close all when GSR flips against position
@@ -368,6 +370,13 @@ void GetCtx(const datetime tm, Ctx &c)
       if(i0 >= 0)
         {
          int i1 = i0 + InpGsrLookback;
+         if(InpGsrPineMode)   // Pine: gsr[N] = daily-ratio value N bars of the chart TF ago
+           {
+            datetime tPrev = tm - (datetime)((long)InpGsrLookback * PeriodSeconds(InpGsrChartTF));
+            i1 = iBarShift(_Symbol, PERIOD_D1, tPrev, false);
+            if(i1 < 0)
+               i1 = i0;
+           }
          datetime t0 = iTime(_Symbol, PERIOD_D1, i0);
          datetime t1 = iTime(_Symbol, PERIOD_D1, i1);
          int s0 = iBarShift(g_silver, PERIOD_D1, t0, false);
@@ -547,7 +556,7 @@ bool FibValid(const bool isLong, const double entry)
 //==================================================================
 bool LevelOn()
   {
-   return InpLevelMode || InpSimpleMode;
+   return InpLevelMode;   // default: enter only on the FIRST bar of a signal (same as Pine BUY/SELL labels)
   }
 
 void Evaluate(bool &trig[][2])
